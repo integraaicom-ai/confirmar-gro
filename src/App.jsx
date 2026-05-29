@@ -3,10 +3,20 @@ import { useState, useEffect } from "react";
 const CRM_FUNCTION_URL =
   "https://app.base44.com/api/apps/692ce8b41b53f8d1d71b7ec7/functions/confirmarLeituraGRO";
 
+function formatCPF(value) {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  return digits
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
 export default function App() {
-  const [status, setStatus] = useState("loading"); // loading | pendente | confirmando | confirmado | ja_confirmado | demo | erro
+  const [status, setStatus] = useState("loading");
   const [mensagem, setMensagem] = useState("");
   const [titulo, setTitulo] = useState("");
+  const [cpf, setCpf] = useState("");
+  const [cpfErro, setCpfErro] = useState("");
 
   const params = new URLSearchParams(window.location.search);
   const token = params.get("token");
@@ -19,41 +29,42 @@ export default function App() {
       setMensagem("Link inválido ou incompleto. Verifique se copiou o link corretamente.");
       return;
     }
-
-    // Modo demo
     if (token === "TESTE123" || comunicado_id === "teste") {
       setStatus("demo");
       setTitulo("Comunicado de Teste — GRO");
       return;
     }
-
     setStatus("pendente");
   }, []);
 
   const confirmar = async () => {
+    const cpfLimpo = cpf.replace(/\D/g, "");
+    if (cpfLimpo.length !== 11) {
+      setCpfErro("Digite um CPF válido com 11 dígitos.");
+      return;
+    }
+    setCpfErro("");
     setStatus("confirmando");
     try {
       const res = await fetch(CRM_FUNCTION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, comunicado_id, usuario_id }),
+        body: JSON.stringify({ token, comunicado_id, usuario_id, cpf: cpfLimpo }),
       });
-
       const data = await res.json();
-
       if (data?.ja_confirmado) {
         setStatus("ja_confirmado");
-        setMensagem(data.message || "Você já confirmou este comunicado anteriormente.");
+        setMensagem(data.error || "Você já confirmou este comunicado anteriormente.");
       } else if (data?.success) {
         setStatus("confirmado");
-        setMensagem("Sua confirmação foi registrada com validade jurídica conforme a NR-1.");
+        setMensagem(data.mensagem || "Sua confirmação foi registrada com validade jurídica conforme a NR-1.");
       } else {
-        setStatus("erro");
-        setMensagem(data?.error || "Erro ao processar confirmação.");
+        setStatus("pendente");
+        setCpfErro(data?.error || "Erro ao processar confirmação.");
       }
     } catch (e) {
-      setStatus("erro");
-      setMensagem("Erro de conexão. Tente novamente em alguns instantes.");
+      setStatus("pendente");
+      setCpfErro("Erro de conexão. Tente novamente em alguns instantes.");
     }
   };
 
@@ -67,17 +78,13 @@ export default function App() {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        {/* Header */}
         <div style={styles.header}>
-          <div style={styles.iconWrapper}>
-            <ShieldIcon />
-          </div>
+          <div style={styles.iconWrapper}><ShieldIcon /></div>
           <h1 style={styles.title}>Confirmação de Leitura</h1>
           <p style={styles.subtitle}>GRO — Gerenciamento de Riscos Ocupacionais</p>
           {titulo && <p style={styles.comunicadoTitulo}>📋 {titulo}</p>}
         </div>
 
-        {/* Body */}
         <div style={styles.body}>
           {status === "loading" && (
             <div style={styles.center}>
@@ -96,9 +103,35 @@ export default function App() {
               <p style={styles.mutedText}>
                 Esta confirmação é registrada com data, hora e validade jurídica.
               </p>
+
+              {/* Campo CPF */}
+              <div style={{ width: "100%", marginTop: "8px" }}>
+                <label style={styles.label}>CPF para validação de identidade</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="000.000.000-00"
+                  value={cpf}
+                  onChange={(e) => {
+                    setCpfErro("");
+                    setCpf(formatCPF(e.target.value));
+                  }}
+                  style={{
+                    ...styles.input,
+                    borderColor: cpfErro ? "#ef4444" : "#374151",
+                  }}
+                  maxLength={14}
+                />
+                {cpfErro && <p style={styles.erroTexto}>{cpfErro}</p>}
+              </div>
+
               <button onClick={confirmar} style={styles.btnPrimary}>
                 ✅ Confirmar Leitura
               </button>
+
+              <p style={{ ...styles.mutedText, fontSize: "11px" }}>
+                🔒 Seu CPF é usado apenas para validar sua identidade e não é armazenado completo.
+              </p>
             </div>
           )}
 
@@ -107,12 +140,8 @@ export default function App() {
               <div style={{ ...styles.badge, background: "#431407", color: "#f97316", border: "1px solid #f97316" }}>
                 🧪 MODO DEMONSTRAÇÃO
               </div>
-              <p style={styles.infoText}>
-                Este é um link de teste. Nenhum registro será salvo no sistema.
-              </p>
-              <button onClick={confirmarDemo} style={styles.btnPrimary}>
-                ✅ Simular Confirmação
-              </button>
+              <p style={styles.infoText}>Este é um link de teste. Nenhum registro será salvo.</p>
+              <button onClick={confirmarDemo} style={styles.btnPrimary}>✅ Simular Confirmação</button>
             </div>
           )}
 
@@ -151,14 +180,12 @@ export default function App() {
           )}
         </div>
 
-        {/* Footer */}
         <p style={styles.footer}>IntegraConnect CRM © 2026</p>
       </div>
     </div>
   );
 }
 
-// ── Icons ──────────────────────────────────────────────────────────────
 function ShieldIcon() {
   return (
     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -187,119 +214,28 @@ function AlertIcon() {
   );
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────
 const styles = {
-  container: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "16px",
-    background: "linear-gradient(135deg, #030712 0%, #0f172a 100%)",
-  },
-  card: {
-    background: "#111827",
-    borderRadius: "20px",
-    padding: "40px 32px",
-    maxWidth: "420px",
-    width: "100%",
-    border: "1px solid #1f2937",
-    boxShadow: "0 25px 50px rgba(0,0,0,0.5)",
-  },
-  header: {
-    textAlign: "center",
-    marginBottom: "32px",
-  },
-  iconWrapper: {
-    display: "flex",
-    justifyContent: "center",
-    marginBottom: "16px",
-  },
-  title: {
-    fontSize: "22px",
-    fontWeight: "700",
-    color: "#f9fafb",
-    marginBottom: "4px",
-  },
-  subtitle: {
-    fontSize: "13px",
-    color: "#6b7280",
-    marginBottom: "0",
-  },
-  comunicadoTitulo: {
-    marginTop: "12px",
-    fontSize: "14px",
-    color: "#d1d5db",
-    background: "#1f2937",
-    borderRadius: "8px",
-    padding: "8px 12px",
-  },
-  body: {
-    minHeight: "180px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  center: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "16px",
-    textAlign: "center",
-    width: "100%",
-  },
-  infoText: {
-    fontSize: "14px",
-    color: "#d1d5db",
-    lineHeight: "1.6",
-  },
-  mutedText: {
-    fontSize: "13px",
-    color: "#6b7280",
-    lineHeight: "1.5",
-  },
-  resultTitle: {
-    fontSize: "20px",
-    fontWeight: "700",
-    marginBottom: "4px",
-  },
-  btnPrimary: {
-    background: "#f97316",
-    color: "#fff",
-    border: "none",
-    borderRadius: "12px",
-    padding: "14px 32px",
-    fontSize: "16px",
-    fontWeight: "700",
-    cursor: "pointer",
-    width: "100%",
-    marginTop: "8px",
-    transition: "background 0.2s",
-  },
-  badge: {
-    padding: "6px 16px",
-    borderRadius: "20px",
-    fontSize: "12px",
-    fontWeight: "700",
-    letterSpacing: "0.05em",
-  },
-  spinner: {
-    width: "40px",
-    height: "40px",
-    border: "3px solid #1f2937",
-    borderTop: "3px solid #f97316",
-    borderRadius: "50%",
-    animation: "spin 0.8s linear infinite",
-  },
-  footer: {
-    textAlign: "center",
-    fontSize: "11px",
-    color: "#374151",
-    marginTop: "32px",
-  },
+  container: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", background: "linear-gradient(135deg, #030712 0%, #0f172a 100%)" },
+  card: { background: "#111827", borderRadius: "20px", padding: "40px 32px", maxWidth: "420px", width: "100%", border: "1px solid #1f2937", boxShadow: "0 25px 50px rgba(0,0,0,0.5)" },
+  header: { textAlign: "center", marginBottom: "32px" },
+  iconWrapper: { display: "flex", justifyContent: "center", marginBottom: "16px" },
+  title: { fontSize: "22px", fontWeight: "700", color: "#f9fafb", marginBottom: "4px" },
+  subtitle: { fontSize: "13px", color: "#6b7280", marginBottom: "0" },
+  comunicadoTitulo: { marginTop: "12px", fontSize: "14px", color: "#d1d5db", background: "#1f2937", borderRadius: "8px", padding: "8px 12px" },
+  body: { minHeight: "200px", display: "flex", alignItems: "center", justifyContent: "center" },
+  center: { display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", textAlign: "center", width: "100%" },
+  infoText: { fontSize: "14px", color: "#d1d5db", lineHeight: "1.6" },
+  mutedText: { fontSize: "13px", color: "#6b7280", lineHeight: "1.5" },
+  resultTitle: { fontSize: "20px", fontWeight: "700", marginBottom: "4px" },
+  label: { display: "block", fontSize: "13px", color: "#9ca3af", marginBottom: "6px", textAlign: "left" },
+  input: { width: "100%", background: "#1f2937", border: "1px solid #374151", borderRadius: "10px", padding: "12px 14px", fontSize: "16px", color: "#f9fafb", outline: "none", boxSizing: "border-box", letterSpacing: "2px" },
+  erroTexto: { fontSize: "12px", color: "#ef4444", textAlign: "left", marginTop: "4px" },
+  btnPrimary: { background: "#f97316", color: "#fff", border: "none", borderRadius: "12px", padding: "14px 32px", fontSize: "16px", fontWeight: "700", cursor: "pointer", width: "100%", marginTop: "4px" },
+  badge: { padding: "6px 16px", borderRadius: "20px", fontSize: "12px", fontWeight: "700", letterSpacing: "0.05em" },
+  spinner: { width: "40px", height: "40px", border: "3px solid #1f2937", borderTop: "3px solid #f97316", borderRadius: "50%", animation: "spin 0.8s linear infinite" },
+  footer: { textAlign: "center", fontSize: "11px", color: "#374151", marginTop: "32px" },
 };
 
-// Inject spinner animation
 const styleSheet = document.createElement("style");
 styleSheet.textContent = `@keyframes spin { to { transform: rotate(360deg); } }`;
 document.head.appendChild(styleSheet);
