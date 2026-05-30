@@ -1,100 +1,150 @@
 import { useState, useEffect } from "react";
 
-const CRM_FUNCTION_URL =
-  "https://app.base44.com/api/apps/69af74a236a56c437aee5dce/functions/confirmarGROProxy";
-
-function formatCPF(value) {
-  const digits = value.replace(/\D/g, "").slice(0, 11);
-  return digits
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d)/, "$1.$2")
-    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-}
+const PORTAL_LOGIN_URL =
+  "https://app.base44.com/api/apps/692ce8b41b53f8d1d71b7ec7/functions/portalLogin";
+const CONFIRMAR_URL =
+  "https://app.base44.com/api/apps/692ce8b41b53f8d1d71b7ec7/functions/confirmarLeituraGROPortal";
 
 export default function App() {
-  const [status, setStatus] = useState("loading");
-  const [mensagem, setMensagem] = useState("");
-  const [titulo, setTitulo] = useState("");
-  const [cpf, setCpf] = useState("");
-  const [cpfErro, setCpfErro] = useState("");
+  const [tela, setTela] = useState("login"); // login | confirmando_login | confirmacao | confirmando | sucesso | ja_confirmado | erro
+  const [usuario, setUsuario] = useState(null);
+  const [comunicado, setComunicado] = useState(null);
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [loginErro, setLoginErro] = useState("");
+  const [erroMsg, setErroMsg] = useState("");
 
   const params = new URLSearchParams(window.location.search);
-  const token = params.get("token");
   const comunicado_id = params.get("comunicado_id");
-  const usuario_id = params.get("usuario_id");
 
   useEffect(() => {
-    if (!token || !comunicado_id || !usuario_id) {
-      setStatus("erro");
-      setMensagem("Link inválido ou incompleto. Verifique se copiou o link corretamente.");
-      return;
+    if (!comunicado_id) {
+      setTela("erro");
+      setErroMsg("Link inválido. Verifique se copiou o link corretamente.");
     }
-    if (token === "TESTE123" || comunicado_id === "teste") {
-      setStatus("demo");
-      setTitulo("Comunicado de Teste — GRO");
-      return;
-    }
-    setStatus("pendente");
   }, []);
 
-  const confirmar = async () => {
-    const cpfLimpo = cpf.replace(/\D/g, "");
-    if (cpfLimpo.length !== 11) {
-      setCpfErro("Digite um CPF válido com 11 dígitos.");
+  const fazerLogin = async () => {
+    if (!email || !senha) {
+      setLoginErro("Preencha e-mail e senha.");
       return;
     }
-    setCpfErro("");
-    setStatus("confirmando");
+    setTela("confirmando_login");
+    setLoginErro("");
     try {
-      const res = await fetch(CRM_FUNCTION_URL, {
+      const res = await fetch(PORTAL_LOGIN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, comunicado_id, usuario_id, cpf: cpfLimpo }),
+        body: JSON.stringify({ email: email.toLowerCase().trim(), senha }),
       });
       const data = await res.json();
-      if (data?.ja_confirmado) {
-        setStatus("ja_confirmado");
-        setMensagem(data.error || "Você já confirmou este comunicado anteriormente.");
-      } else if (data?.success) {
-        setStatus("confirmado");
-        setMensagem(data.mensagem || "Sua confirmação foi registrada com validade jurídica conforme a NR-1.");
+      if (data?.success && data?.usuario) {
+        setUsuario(data.usuario);
+        setTela("confirmacao");
       } else {
-        setStatus("pendente");
-        setCpfErro(data?.error || "Erro ao processar confirmação.");
+        setLoginErro(data?.error || "E-mail ou senha inválidos.");
+        setTela("login");
       }
     } catch (e) {
-      setStatus("pendente");
-      setCpfErro("Erro de conexão. Tente novamente em alguns instantes.");
+      setLoginErro("Erro de conexão. Tente novamente.");
+      setTela("login");
     }
   };
 
-  const confirmarDemo = async () => {
-    setStatus("confirmando");
-    await new Promise((r) => setTimeout(r, 1500));
-    setStatus("confirmado");
-    setMensagem("Modo de demonstração — nenhum registro foi salvo.");
+  const confirmarLeitura = async () => {
+    setTela("confirmando");
+    try {
+      const res = await fetch(CONFIRMAR_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          comunicado_id,
+          usuario_email: usuario.email,
+          usuario_nome: usuario.nome,
+          empresa_id: usuario.empresa_id,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ja_confirmado) {
+        setTela("ja_confirmado");
+      } else if (data?.success) {
+        setComunicado(data.comunicado_titulo || "Comunicado GRO");
+        setTela("sucesso");
+      } else {
+        setErroMsg(data?.error || "Erro ao registrar confirmação.");
+        setTela("erro");
+      }
+    } catch (e) {
+      setErroMsg("Erro de conexão. Tente novamente.");
+      setTela("erro");
+    }
   };
 
   return (
     <div style={styles.container}>
       <div style={styles.card}>
+        {/* Header */}
         <div style={styles.header}>
           <div style={styles.iconWrapper}><ShieldIcon /></div>
           <h1 style={styles.title}>Confirmação de Leitura</h1>
           <p style={styles.subtitle}>GRO — Gerenciamento de Riscos Ocupacionais</p>
-          {titulo && <p style={styles.comunicadoTitulo}>📋 {titulo}</p>}
         </div>
 
         <div style={styles.body}>
-          {status === "loading" && (
+
+          {/* TELA LOGIN */}
+          {tela === "login" && (
             <div style={styles.center}>
-              <div style={styles.spinner} />
-              <p style={styles.mutedText}>Carregando...</p>
+              <p style={styles.infoText}>
+                Entre com suas credenciais para confirmar o comunicado de segurança conforme exigido pela{" "}
+                <strong style={{ color: "#f97316" }}>NR-1</strong>.
+              </p>
+              <div style={{ width: "100%", marginTop: "8px" }}>
+                <label style={styles.label}>E-mail</label>
+                <input
+                  type="email"
+                  placeholder="seu@email.com"
+                  value={email}
+                  onChange={(e) => { setLoginErro(""); setEmail(e.target.value); }}
+                  onKeyDown={(e) => e.key === "Enter" && fazerLogin()}
+                  style={styles.input}
+                />
+              </div>
+              <div style={{ width: "100%", marginTop: "4px" }}>
+                <label style={styles.label}>Senha</label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={senha}
+                  onChange={(e) => { setLoginErro(""); setSenha(e.target.value); }}
+                  onKeyDown={(e) => e.key === "Enter" && fazerLogin()}
+                  style={styles.input}
+                />
+              </div>
+              {loginErro && <p style={styles.erroTexto}>{loginErro}</p>}
+              <button onClick={fazerLogin} style={styles.btnPrimary}>
+                Entrar
+              </button>
+              <p style={{ ...styles.mutedText, fontSize: "11px" }}>
+                Use as mesmas credenciais do Portal IntegraConnect.
+              </p>
             </div>
           )}
 
-          {status === "pendente" && (
+          {/* AGUARDANDO LOGIN */}
+          {tela === "confirmando_login" && (
             <div style={styles.center}>
+              <div style={styles.spinner} />
+              <p style={styles.mutedText}>Autenticando...</p>
+            </div>
+          )}
+
+          {/* TELA CONFIRMAÇÃO */}
+          {tela === "confirmacao" && (
+            <div style={styles.center}>
+              <div style={styles.welcomeBadge}>
+                👋 Olá, {usuario?.nome?.split(" ")[0]}
+              </div>
               <p style={styles.infoText}>
                 Ao confirmar, você declara que leu e compreendeu o comunicado de segurança e saúde
                 ocupacional conforme exigido pela{" "}
@@ -103,81 +153,52 @@ export default function App() {
               <p style={styles.mutedText}>
                 Esta confirmação é registrada com data, hora e validade jurídica.
               </p>
-
-              {/* Campo CPF */}
-              <div style={{ width: "100%", marginTop: "8px" }}>
-                <label style={styles.label}>CPF para validação de identidade</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="000.000.000-00"
-                  value={cpf}
-                  onChange={(e) => {
-                    setCpfErro("");
-                    setCpf(formatCPF(e.target.value));
-                  }}
-                  style={{
-                    ...styles.input,
-                    borderColor: cpfErro ? "#ef4444" : "#374151",
-                  }}
-                  maxLength={14}
-                />
-                {cpfErro && <p style={styles.erroTexto}>{cpfErro}</p>}
-              </div>
-
-              <button onClick={confirmar} style={styles.btnPrimary}>
+              <button onClick={confirmarLeitura} style={styles.btnPrimary}>
                 ✅ Confirmar Leitura
               </button>
-
-              <p style={{ ...styles.mutedText, fontSize: "11px" }}>
-                🔒 Seu CPF é usado apenas para validar sua identidade e não é armazenado completo.
-              </p>
             </div>
           )}
 
-          {status === "demo" && (
-            <div style={styles.center}>
-              <div style={{ ...styles.badge, background: "#431407", color: "#f97316", border: "1px solid #f97316" }}>
-                🧪 MODO DEMONSTRAÇÃO
-              </div>
-              <p style={styles.infoText}>Este é um link de teste. Nenhum registro será salvo.</p>
-              <button onClick={confirmarDemo} style={styles.btnPrimary}>✅ Simular Confirmação</button>
-            </div>
-          )}
-
-          {status === "confirmando" && (
+          {/* PROCESSANDO CONFIRMAÇÃO */}
+          {tela === "confirmando" && (
             <div style={styles.center}>
               <div style={styles.spinner} />
               <p style={styles.mutedText}>Registrando confirmação...</p>
             </div>
           )}
 
-          {status === "confirmado" && (
+          {/* SUCESSO */}
+          {tela === "sucesso" && (
             <div style={styles.center}>
               <CheckIcon color="#22c55e" />
               <p style={{ ...styles.resultTitle, color: "#22c55e" }}>Confirmado!</p>
-              <p style={styles.mutedText}>{mensagem}</p>
-              <p style={{ ...styles.mutedText, fontSize: "12px", marginTop: "8px" }}>
+              <p style={styles.mutedText}>
+                Sua confirmação foi registrada com validade jurídica conforme a NR-1.
+              </p>
+              <p style={{ ...styles.mutedText, fontSize: "12px", marginTop: "4px" }}>
                 Você pode fechar esta página.
               </p>
             </div>
           )}
 
-          {status === "ja_confirmado" && (
+          {/* JÁ CONFIRMADO */}
+          {tela === "ja_confirmado" && (
             <div style={styles.center}>
               <CheckIcon color="#3b82f6" />
               <p style={{ ...styles.resultTitle, color: "#3b82f6" }}>Já Confirmado</p>
-              <p style={styles.mutedText}>{mensagem}</p>
+              <p style={styles.mutedText}>Você já confirmou este comunicado anteriormente.</p>
             </div>
           )}
 
-          {status === "erro" && (
+          {/* ERRO */}
+          {tela === "erro" && (
             <div style={styles.center}>
               <AlertIcon />
               <p style={{ ...styles.resultTitle, color: "#ef4444" }}>Erro</p>
-              <p style={styles.mutedText}>{mensagem}</p>
+              <p style={styles.mutedText}>{erroMsg}</p>
             </div>
           )}
+
         </div>
 
         <p style={styles.footer}>IntegraConnect CRM © 2026</p>
@@ -220,22 +241,21 @@ const styles = {
   header: { textAlign: "center", marginBottom: "32px" },
   iconWrapper: { display: "flex", justifyContent: "center", marginBottom: "16px" },
   title: { fontSize: "22px", fontWeight: "700", color: "#f9fafb", marginBottom: "4px" },
-  subtitle: { fontSize: "13px", color: "#6b7280", marginBottom: "0" },
-  comunicadoTitulo: { marginTop: "12px", fontSize: "14px", color: "#d1d5db", background: "#1f2937", borderRadius: "8px", padding: "8px 12px" },
-  body: { minHeight: "200px", display: "flex", alignItems: "center", justifyContent: "center" },
+  subtitle: { fontSize: "13px", color: "#6b7280" },
+  body: { minHeight: "220px", display: "flex", alignItems: "center", justifyContent: "center" },
   center: { display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", textAlign: "center", width: "100%" },
   infoText: { fontSize: "14px", color: "#d1d5db", lineHeight: "1.6" },
   mutedText: { fontSize: "13px", color: "#6b7280", lineHeight: "1.5" },
   resultTitle: { fontSize: "20px", fontWeight: "700", marginBottom: "4px" },
   label: { display: "block", fontSize: "13px", color: "#9ca3af", marginBottom: "6px", textAlign: "left" },
-  input: { width: "100%", background: "#1f2937", border: "1px solid #374151", borderRadius: "10px", padding: "12px 14px", fontSize: "16px", color: "#f9fafb", outline: "none", boxSizing: "border-box", letterSpacing: "2px" },
-  erroTexto: { fontSize: "12px", color: "#ef4444", textAlign: "left", marginTop: "4px" },
+  input: { width: "100%", background: "#1f2937", border: "1px solid #374151", borderRadius: "10px", padding: "12px 14px", fontSize: "15px", color: "#f9fafb", outline: "none", boxSizing: "border-box" },
+  erroTexto: { fontSize: "12px", color: "#ef4444", textAlign: "left", width: "100%" },
   btnPrimary: { background: "#f97316", color: "#fff", border: "none", borderRadius: "12px", padding: "14px 32px", fontSize: "16px", fontWeight: "700", cursor: "pointer", width: "100%", marginTop: "4px" },
-  badge: { padding: "6px 16px", borderRadius: "20px", fontSize: "12px", fontWeight: "700", letterSpacing: "0.05em" },
+  welcomeBadge: { background: "#1f2937", border: "1px solid #374151", borderRadius: "20px", padding: "8px 20px", fontSize: "14px", color: "#d1d5db" },
   spinner: { width: "40px", height: "40px", border: "3px solid #1f2937", borderTop: "3px solid #f97316", borderRadius: "50%", animation: "spin 0.8s linear infinite" },
   footer: { textAlign: "center", fontSize: "11px", color: "#374151", marginTop: "32px" },
 };
 
 const styleSheet = document.createElement("style");
-styleSheet.textContent = `@keyframes spin { to { transform: rotate(360deg); } }`;
+styleSheet.innerText = "@keyframes spin { to { transform: rotate(360deg); } }";
 document.head.appendChild(styleSheet);
