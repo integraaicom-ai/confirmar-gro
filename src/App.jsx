@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 
 const CRM_FUNCTION_URL =
-  "https://app.base44.com/api/apps/692ce8b41b53f8d1d71b7ec7/functions/confirmarLeituraGRO";
+  "https://app.base44.com/api/apps/69af74a236a56c437aee5dce/functions/confirmarGROProxy";
 
 function formatCPF(value) {
   const digits = value.replace(/\D/g, "").slice(0, 11);
